@@ -1,91 +1,66 @@
 const express = require('express');
 const axios = require('axios');
-const { isPrime, isFibonacci } = require('mathjs');
 
 const app = express();
 const PORT = 9876;
 const WINDOW_SIZE = 10;
+const THIRD_PARTY_API_URL = "http://20.244.65.144/numbers/";
 
-let storedNumbers = [];
+// Global variables
+let numbersQueue = [];
 
-// Middleware to limit response time
-app.use((req, res, next) => {
-  const startTime = new Date();
-  res.on('finish', () => {
-    const duration = new Date() - startTime;
-    if (duration > 500) {
-      console.log("Request took too long (${500}ms): ${req.method}, ${req.originalUrl}");
-    }
-  });
-  next();
-});
-
-// Fetch numbers from third-party server
-const fetchNumbers = async () => {
-  try {
-    const response = await axios.get('http://20.244.56.144/test/register');
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching numbers:', error.message);
-    return [];
-  }
-};
-
-// Calculate average of numbers in the window
-const calculateAverage = () => {
-  const sum = storedNumbers.slice(-WINDOW_SIZE).reduce((acc, num) => acc + num, 0);
-  return sum / Math.min(storedNumbers.length, WINDOW_SIZE);
-};
-
-// Route for handling number requests
-app.get('/numbers/:type', async (req, res) => {
-  const { type } = req.params;
-  let numbers = await fetchNumbers();
-
-  // Filter numbers based on type
-  switch (type) {
-    case 'p':
-      numbers = numbers.filter(isPrime);
-      break;
-    case 'f':
-      numbers = numbers.filter(isFibonacci);
-      break;
-    case 'e':
-      numbers = numbers.filter(num => num % 2 === 0);
-      break;
-    case 'r':
-      // Random numbers are assumed to be provided by the third-party server
-      break;
-    default:
-      return res.status(400).send('Invalid number type');
-  }
-
-  // Ensure stored numbers are unique and limit to window size
-  storedNumbers = [...new Set([...storedNumbers, ...numbers])].slice(-WINDOW_SIZE);
-
-  const avg = calculateAverage();
-
-  res.json({
-    windowPrevState: storedNumbers.slice(0, -numbers.length),
-    windowCurrState: storedNumbers,
-    numbers: numbers,
-    avg: avg.toFixed(2)
-  });
-});
-
-
-fetch('http://20.244.56.144/test/primes')
-.then(response => response.json())
-.then(data => {
-    console.log(data.numbers); // This will log the array of prime numbers returned by the API
+app.get("/" , function (req, res) {
+    res.sendFile(__dirname+"/index.html")
 })
-.catch(error => {
-    console.error('Error fetching prime numbers:', error);
+// Fetch numbers from the third-party server
+const fetchNumbers = async () => {
+    try {
+        const response = await axios.get(THIRD_PARTY_API_URL);
+        if (response.status === 200) {
+            const numbers = response.data.numbers;
+            numbers.forEach(number => {
+                if (!numbersQueue.includes(number)) {
+                    numbersQueue.push(number);
+                }
+            });
+        }
+    } catch (error) {
+        console.error("Error fetching numbers:", error.message);
+    }
+};
+
+// Fetch numbers periodically
+setInterval(fetchNumbers, 500);
+
+// Middleware to parse JSON request bodies
+app.use(express.json());
+
+// Route to handle requests for specific number IDs
+app.get('/numbers/:number_id', (req, res) => {
+    const numberId = req.params.number_id;
+    
+    // Logic to filter numbers based on the number ID
+    // Here you would fetch numbers from numbersQueue based on the numberId
+    
+    let average = null;
+    if (numbersQueue.length === WINDOW_SIZE) {
+        average = numbersQueue.reduce((sum, num) => sum + num, 0) / WINDOW_SIZE;
+    }
+
+    const windowPrevState = [...numbersQueue];
+    // Logic to fetch numbers based on the number ID and update numbersQueue
+
+    const response = {
+        windowPrevState,
+        windowCurrState: numbersQueue,
+        numbers: windowPrevState, // Assuming numbers fetched based on number_id
+        avg: average
+    };
+
+    res.json(response);
 });
-
-
 
 // Start the server
 app.listen(3000, () => {
-  console.log("Server is running on http://localhost:${3000}");
+    console.log("Server is running on port ${PORT}");
 });
